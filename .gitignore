@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+
+# SQLite
+*.db
+*.sqlite3
+
+# Node
+node_modules/
+.next/
+out/
+dist/
+build/
+coverage/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Editors / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Uploads (never persist user PDFs)
+backend/uploads/
