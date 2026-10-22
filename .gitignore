@@ -27,6 +27,7 @@ coverage/
 
 # Editors / OS
 .DS_Store
+*.tsbuildinfo
 Thumbs.db
 .idea/
 .vscode/
