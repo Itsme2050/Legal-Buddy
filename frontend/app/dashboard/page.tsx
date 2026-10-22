@@ -10,7 +10,7 @@ import {
   Sparkles,
 } from "lucide-react";
 
-import { ApiError, getIntegrationStatus, getHistory, startResearch } from "@/lib/api";
+import { ApiError, getApiBase, getIntegrationStatus, getHistory, startResearch } from "@/lib/api";
 import {
   DISCLAIMER,
   EXAMPLE_PROMPTS,
@@ -150,9 +150,7 @@ function DashboardInner() {
     let sse: EventSource | null = null;
     if (typeof window !== "undefined" && typeof EventSource !== "undefined") {
       try {
-        const apiBase =
-          process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ||
-          "http://localhost:8000";
+        const apiBase = getApiBase();
         sse = new EventSource(`${apiBase}/api/research/${clientSessionId}/stream`);
         sse.addEventListener("status", (evt) => {
           try {

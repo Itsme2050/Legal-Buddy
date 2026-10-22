@@ -6,9 +6,19 @@ import type {
   ResearchResult,
 } from "@/types/research";
 
-const BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ||
-  "http://localhost:8000";
+export function getApiBase(): string {
+  if (process.env.NEXT_PUBLIC_API_BASE_URL) {
+    return process.env.NEXT_PUBLIC_API_BASE_URL.replace(/\/$/, "");
+  }
+  if (
+    typeof window !== "undefined" &&
+    window.location.hostname !== "localhost" &&
+    window.location.hostname !== "127.0.0.1"
+  ) {
+    return "https://legal-buddy-62aq.onrender.com";
+  }
+  return "http://localhost:8000";
+}
 
 export class ApiError extends Error {
   status: number;
@@ -46,7 +56,8 @@ async function parseError(res: Response): Promise<ApiError> {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const base = getApiBase();
+  const res = await fetch(`${base}${path}`, {
     ...init,
     headers: {
       Accept: "application/json",
@@ -62,7 +73,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export function apiBase(): string {
-  return BASE;
+  return getApiBase();
 }
 
 export async function getHealth() {
