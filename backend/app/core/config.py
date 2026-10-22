@@ -78,7 +78,7 @@ class Settings:
 
     # Gemini
     gemini_api_key: str | None = _env("GEMINI_API_KEY")
-    gemini_model: str = _env("GEMINI_MODEL", "gemini-2.5-flash") or "gemini-2.5-flash"
+    gemini_model: str = _env("GEMINI_MODEL", "gemini-3.8-flash") or "gemini-3.8-flash"
     gemini_timeout_seconds: float = _env_float("GEMINI_TIMEOUT_SECONDS", 60.0)
     gemini_max_excerpt_chars: int = _env_int("GEMINI_MAX_EXCERPT_CHARS", 9000)
 

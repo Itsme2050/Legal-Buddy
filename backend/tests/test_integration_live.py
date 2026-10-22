@@ -17,11 +17,15 @@ pytestmark = pytest.mark.integration
 
 
 def _tinyfish_key() -> str | None:
-    return os.environ.get("TINYFISH_API_KEY")
+    from app.core.config import get_settings
+
+    return os.environ.get("TINYFISH_API_KEY") or get_settings().tinyfish_api_key
 
 
 def _gemini_key() -> str | None:
-    return os.environ.get("GEMINI_API_KEY")
+    from app.core.config import get_settings
+
+    return os.environ.get("GEMINI_API_KEY") or get_settings().gemini_api_key
 
 
 @pytest.mark.asyncio
@@ -74,11 +78,17 @@ def test_live_gemini_analysis():
             "with the provisions of this Act and subject to notice as prescribed."
         ),
     )
-    result = analyze_sources(
-        question="Can a tenant be evicted without notice in India?",
-        jurisdiction="India",
-        sources=[source],
-    )
+    from app.services.gemini_client import GeminiProviderError
+    try:
+        result = analyze_sources(
+            question="Can a tenant be evicted without notice in India?",
+            jurisdiction="India",
+            sources=[source],
+        )
+    except GeminiProviderError as exc:
+        if any(w in str(exc) for w in ("503", "UNAVAILABLE", "429", "high demand", "timed out")):
+            pytest.skip(f"Gemini API upstream temporarily unavailable: {exc}")
+        raise
     assert result.summary.plain_language
     assert result.entities, "analysis produced no entities"
     valid_ids = {"source_1"}

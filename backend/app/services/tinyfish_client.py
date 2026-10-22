@@ -258,9 +258,30 @@ def normalize_fetch_result(url: str, payload: Any) -> NormalizedFetchResult:
     if not isinstance(payload, dict):
         return NormalizedFetchResult(url=url, status=FetchStatus.FAILED, error="Unexpected fetch payload shape", fetched_at=now)
 
-    # Nested envelopes some providers use
-    inner = payload.get("data") if isinstance(payload.get("data"), dict) else None
-    body = inner or payload
+    # Nested envelopes or batch responses from TinyFish
+    if isinstance(payload.get("results"), list) and payload["results"]:
+        match = next(
+            (item for item in payload["results"] if isinstance(item, dict) and (item.get("url") == url or item.get("final_url") == url)),
+            payload["results"][0],
+        )
+        body = match if isinstance(match, dict) else payload
+    elif isinstance(payload.get("errors"), list) and payload["errors"]:
+        err_match = next(
+            (item for item in payload["errors"] if isinstance(item, dict) and item.get("url") == url),
+            payload["errors"][0] if isinstance(payload["errors"][0], dict) else None,
+        )
+        if err_match:
+            return NormalizedFetchResult(
+                url=url,
+                status=FetchStatus.FAILED,
+                error=str(err_match.get("error") or err_match.get("message") or "Provider fetch error"),
+                fetched_at=now,
+                provider_metadata=_safe_meta(payload),
+            )
+        body = payload
+    else:
+        inner = payload.get("data") if isinstance(payload.get("data"), dict) else None
+        body = inner or payload
 
     content = (
         body.get("markdown")
@@ -469,7 +490,7 @@ class TinyFishClient:
         client = self._ensure_client()
         try:
             resp = await client.post(
-                settings.tinyfish_fetch_endpoint, json={"url": url}, headers=headers
+                settings.tinyfish_fetch_endpoint, json={"urls": [url], "url": url}, headers=headers
             )
             if resp.status_code == 405:
                 # Some deployments expose fetch as GET ?url=

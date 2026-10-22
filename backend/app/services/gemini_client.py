@@ -251,19 +251,40 @@ def analyze_sources(
         ) from exc
 
     client = Client(api_key=settings.gemini_api_key)
-    try:
-        response = client.models.generate_content(
-            model=settings.gemini_model,
-            contents=user_prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_INSTRUCTION,
-                temperature=0.1,
-                max_output_tokens=4096,
-                response_mime_type="application/json",
-            ),
-        )
-    except Exception as exc:  # SDK raises varied error types
-        raise GeminiProviderError(f"Gemini request failed: {exc}") from exc
+    max_retries = 3
+    response = None
+    last_exc = None
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = client.models.generate_content(
+                model=settings.gemini_model,
+                contents=user_prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_INSTRUCTION,
+                    temperature=0.1,
+                    max_output_tokens=4096,
+                    response_mime_type="application/json",
+                ),
+            )
+            break
+        except Exception as exc:
+            last_exc = exc
+            err_str = str(exc)
+            is_transient = any(
+                code in err_str
+                for code in ("503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED", "high demand", "timed out")
+            )
+            if is_transient and attempt < max_retries:
+                backoff = 2 ** attempt
+                logger.warning(
+                    "Gemini transient error (attempt %d/%d): %s; retrying in %ds...",
+                    attempt, max_retries, exc, backoff
+                )
+                import time
+                time.sleep(backoff)
+                continue
+            raise GeminiProviderError(f"Gemini request failed: {exc}") from exc
 
     raw = getattr(response, "text", None) or ""
     if not raw.strip():
