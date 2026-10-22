@@ -539,15 +539,77 @@ class TinyFishClient:
     async def fetch_multiple_sources(
         self, urls: list[str], max_concurrency: int = 4
     ) -> list[NormalizedFetchResult]:
-        """Fetch up to provider-documented batch limits with bounded concurrency."""
+        """Fetch multiple URLs efficiently using TinyFish's native batch API."""
         urls = urls[: self.settings.tinyfish_max_fetch_urls]
-        sem = asyncio.Semaphore(max_concurrency)
+        if not urls:
+            return []
 
-        async def _one(u: str) -> NormalizedFetchResult:
-            async with sem:
-                return await self.fetch_source(u)
+        key = self._require_credentials()
+        headers = {"X-API-Key": key, "Accept": "application/json"}
+        client = self._ensure_client()
+        out_map: dict[str, NormalizedFetchResult] = {}
+        valid_urls: list[str] = []
 
-        return list(await asyncio.gather(*[_one(u) for u in urls]))
+        for u in urls:
+            try:
+                validate_public_url(u)
+                valid_urls.append(u)
+            except UnsafeURLException as exc:
+                out_map[u] = NormalizedFetchResult(
+                    url=u, status=FetchStatus.SKIPPED, error=f"Blocked unsafe URL: {exc}"
+                )
+
+        if valid_urls:
+            try:
+                # Use a responsive timeout for the batch call
+                batch_timeout = min(self.settings.tinyfish_timeout_seconds, 25.0)
+                resp = await client.post(
+                    self.settings.tinyfish_fetch_endpoint,
+                    json={"urls": valid_urls},
+                    headers=headers,
+                    timeout=httpx.Timeout(batch_timeout),
+                )
+                if resp.status_code == 200:
+                    payload = resp.json()
+                    results_list = payload.get("results", [])
+                    results_by_url = {item.get("url"): item for item in results_list if isinstance(item, dict)}
+                    results_by_final = {item.get("final_url"): item for item in results_list if isinstance(item, dict)}
+
+                    errors_list = payload.get("errors", [])
+                    errors_by_url = {item.get("url"): item.get("error") for item in errors_list if isinstance(item, dict)}
+
+                    for u in valid_urls:
+                        item = results_by_url.get(u) or results_by_final.get(u)
+                        if item:
+                            out_map[u] = normalize_fetch_result(u, item)
+                        elif u in errors_by_url:
+                            out_map[u] = NormalizedFetchResult(
+                                url=u, status=FetchStatus.FAILED, error=str(errors_by_url[u])
+                            )
+                        else:
+                            out_map[u] = NormalizedFetchResult(
+                                url=u, status=FetchStatus.FAILED, error="No content returned by provider"
+                            )
+                else:
+                    # Fallback to individual fetches with bounded concurrency
+                    sem = asyncio.Semaphore(max_concurrency)
+                    async def _one(u: str) -> NormalizedFetchResult:
+                        async with sem:
+                            return await self.fetch_source(u)
+                    fallback_results = await asyncio.gather(*[_one(u) for u in valid_urls])
+                    for r in fallback_results:
+                        out_map[r.url] = r
+            except Exception as exc:
+                logger.warning("Batch fetch failed (%s); falling back to individual fetches", exc)
+                sem = asyncio.Semaphore(max_concurrency)
+                async def _one(u: str) -> NormalizedFetchResult:
+                    async with sem:
+                        return await self.fetch_source(u)
+                fallback_results = await asyncio.gather(*[_one(u) for u in valid_urls])
+                for r in fallback_results:
+                    out_map[r.url] = r
+
+        return [out_map.get(u) or NormalizedFetchResult(url=u, status=FetchStatus.FAILED, error="Fetch failed") for u in urls]
 
     # ----- helpers -------------------------------------------------------
     @staticmethod
@@ -566,7 +628,7 @@ class TinyFishClient:
 def rank_for_fetch(
     results: list[NormalizedSearchResult], limit: int, prefer_official: bool = True
 ) -> list[NormalizedSearchResult]:
-    """Deduplicated, authority-weighted selection of which sources to fetch."""
+    """Deduplicated, authority-weighted selection with domain diversity."""
     ordered = sorted(
         results,
         key=lambda r: (
@@ -574,7 +636,25 @@ def rank_for_fetch(
             r.rank or 9999,
         ),
     )
-    return ordered[:limit]
+    selected: list[NormalizedSearchResult] = []
+    domain_counts: dict[str, int] = {}
+
+    for r in ordered:
+        domain = (urlparse(r.url).hostname or "").lower()
+        if domain_counts.get(domain, 0) < 2:
+            selected.append(r)
+            domain_counts[domain] = domain_counts.get(domain, 0) + 1
+            if len(selected) >= limit:
+                break
+
+    if len(selected) < limit:
+        for r in ordered:
+            if r not in selected:
+                selected.append(r)
+                if len(selected) >= limit:
+                    break
+
+    return selected[:limit]
 
 # Re-export used by workflow for source construction
 __all__ = [
