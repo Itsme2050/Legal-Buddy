@@ -61,9 +61,10 @@ class SessionRepository:
         source_preference: str,
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
+        session_id: Optional[str] = None,
     ) -> ResearchSessionRow:
         row = ResearchSessionRow(
-            id=str(uuid.uuid4()),
+            id=session_id or str(uuid.uuid4()),
             question=question,
             jurisdiction=jurisdiction,
             topic=topic,

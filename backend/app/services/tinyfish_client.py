@@ -82,6 +82,7 @@ class NormalizedFetchResult:
     url: str
     status: FetchStatus
     content_markdown: Optional[str] = None
+    content_chars: int = 0
     title: Optional[str] = None
     fetched_at: Optional[datetime] = None
     error: Optional[str] = None
@@ -250,6 +251,7 @@ def normalize_fetch_result(url: str, payload: Any) -> NormalizedFetchResult:
             url=url,
             status=FetchStatus.SUCCESS,
             content_markdown=text,
+            content_chars=len(text),
             fetched_at=now,
             provider_metadata={"shape": "plain_text"},
         )
@@ -295,6 +297,7 @@ def normalize_fetch_result(url: str, payload: Any) -> NormalizedFetchResult:
         url=url,
         status=FetchStatus.SUCCESS,
         content_markdown=content,
+        content_chars=len(content),
         title=str(title) if title else None,
         fetched_at=now,
         provider_metadata=meta,
@@ -373,12 +376,16 @@ class TinyFishClient:
         self._client = client
         self._owns_client = client is None
 
-    async def __aenter__(self) -> "TinyFishClient":
+    def _ensure_client(self) -> httpx.AsyncClient:
         if self._client is None:
             self._client = httpx.AsyncClient(
                 timeout=httpx.Timeout(self.settings.tinyfish_timeout_seconds),
                 follow_redirects=True,
             )
+        return self._client
+
+    async def __aenter__(self) -> "TinyFishClient":
+        self._ensure_client()
         return self
 
     async def __aexit__(self, *exc: Any) -> None:
@@ -419,8 +426,9 @@ class TinyFishClient:
         headers = {"X-API-Key": key, "Accept": "application/json"}
 
         start = time.monotonic()
+        client = self._ensure_client()
         try:
-            resp = await self._client.get(settings.tinyfish_search_endpoint, params=params, headers=headers)
+            resp = await client.get(settings.tinyfish_search_endpoint, params=params, headers=headers)
         except httpx.TimeoutException as exc:
             raise TinyFishTimeoutError(f"TinyFish Search timed out after {settings.tinyfish_timeout_seconds}s") from exc
         except httpx.HTTPError as exc:
@@ -458,13 +466,14 @@ class TinyFishClient:
             )
 
         headers = {"X-API-Key": key, "Accept": "application/json"}
+        client = self._ensure_client()
         try:
-            resp = await self._client.post(
+            resp = await client.post(
                 settings.tinyfish_fetch_endpoint, json={"url": url}, headers=headers
             )
             if resp.status_code == 405:
                 # Some deployments expose fetch as GET ?url=
-                resp = await self._client.get(
+                resp = await client.get(
                     settings.tinyfish_fetch_endpoint, params={"url": url}, headers=headers
                 )
         except httpx.TimeoutException:

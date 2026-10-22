@@ -37,5 +37,14 @@ def client():
 
 
 @pytest.fixture()
+def db_session():
+    from app.repositories.database import SessionLocal, init_db
+
+    init_db()
+    with SessionLocal() as s:
+        yield s
+
+
+@pytest.fixture()
 def anyio_backend():
     return "asyncio"

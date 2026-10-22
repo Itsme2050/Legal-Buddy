@@ -4,6 +4,24 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
+
+try:
+    from dotenv import load_dotenv
+
+    # Load from current directory, backend directory, and project root
+    _backend_dir = Path(__file__).resolve().parent.parent.parent
+    _root_dir = _backend_dir.parent
+    for _candidate in (
+        Path(".env"),
+        Path("backend/.env"),
+        _backend_dir / ".env",
+        _root_dir / ".env",
+    ):
+        if _candidate.is_file():
+            load_dotenv(dotenv_path=_candidate, override=False)
+except ImportError:
+    pass
 
 
 def _env(name: str, default: str | None = None) -> str | None:

@@ -5,6 +5,7 @@ pydantic==2.10.4
 httpx==0.28.1
 sqlalchemy==2.0.36
 python-multipart==0.0.20
+python-dotenv>=1.0.0
 pypdf==5.1.0
 google-genai==0.8.0
 pytest==8.3.4

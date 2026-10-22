@@ -203,6 +203,7 @@ export interface ResearchResult {
 }
 
 export interface ResearchRequest {
+  session_id?: string | null;
   question: string;
   jurisdiction: string;
   topic: string;

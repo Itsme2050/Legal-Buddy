@@ -124,6 +124,7 @@ class ResearchWorkflow:
             source_preference=request.source_preference,
             date_from=request.date_from,
             date_to=request.date_to,
+            session_id=request.session_id,
         )
         session_id = row.id
         self.repo.update(session_id, status=SessionStatus.RUNNING)

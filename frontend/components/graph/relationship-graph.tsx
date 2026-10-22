@@ -61,6 +61,188 @@ function isBrowser(): boolean {
   return typeof window !== "undefined";
 }
 
+function exportGraphAsPng(nodes: Node[], edges: Edge[], filename: string): boolean {
+  if (typeof document === "undefined" || !nodes.length) return false;
+  try {
+    const nodeWidth = 200;
+    const nodeHeight = 65;
+    const padding = 50;
+
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+
+    for (const n of nodes) {
+      minX = Math.min(minX, n.position.x);
+      minY = Math.min(minY, n.position.y);
+      maxX = Math.max(maxX, n.position.x + nodeWidth);
+      maxY = Math.max(maxY, n.position.y + nodeHeight);
+    }
+
+    const width = Math.max(400, maxX - minX + padding * 2);
+    const height = Math.max(300, maxY - minY + padding * 2);
+
+    const canvas = document.createElement("canvas");
+    const scale = 2;
+    canvas.width = width * scale;
+    canvas.height = height * scale;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return false;
+
+    ctx.scale(scale, scale);
+    ctx.fillStyle = "#f8fafc";
+    ctx.fillRect(0, 0, width, height);
+
+    ctx.fillStyle = "#e2e8f0";
+    for (let x = 10; x < width; x += 20) {
+      for (let y = 10; y < height; y += 20) {
+        ctx.beginPath();
+        ctx.arc(x, y, 1, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    const offsetX = padding - minX;
+    const offsetY = padding - minY;
+
+    const nodePosMap = new Map<string, { x: number; y: number }>();
+    for (const n of nodes) {
+      nodePosMap.set(n.id, {
+        x: n.position.x + offsetX,
+        y: n.position.y + offsetY,
+      });
+    }
+
+    for (const e of edges) {
+      const src = nodePosMap.get(e.source);
+      const tgt = nodePosMap.get(e.target);
+      if (!src || !tgt) continue;
+
+      const startX = src.x + nodeWidth / 2;
+      const startY = src.y + nodeHeight;
+      const endX = tgt.x + nodeWidth / 2;
+      const endY = tgt.y;
+
+      ctx.beginPath();
+      ctx.moveTo(startX, startY);
+      const cp1Y = startY + (endY - startY) / 2;
+      const cp2Y = endY - (endY - startY) / 2;
+      ctx.bezierCurveTo(startX, cp1Y, endX, cp2Y, endX, endY);
+      ctx.strokeStyle = typeof e.style?.stroke === "string" ? e.style.stroke : "#64748b";
+      ctx.lineWidth = typeof e.style?.strokeWidth === "number" ? e.style.strokeWidth : 1.5;
+      if (e.style?.strokeDasharray) {
+        ctx.setLineDash([5, 4]);
+      } else {
+        ctx.setLineDash([]);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      const arrowLength = 7;
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.beginPath();
+      ctx.moveTo(endX, endY);
+      ctx.lineTo(endX - arrowLength / 2, endY - arrowLength);
+      ctx.lineTo(endX + arrowLength / 2, endY - arrowLength);
+      ctx.closePath();
+      ctx.fill();
+
+      if (e.label) {
+        const midX = (startX + endX) / 2;
+        const midY = (startY + endY) / 2;
+        ctx.font = "bold 9px sans-serif";
+        const labelText = String(e.label);
+        const textWidth = ctx.measureText(labelText).width;
+        ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
+        ctx.fillRect(midX - textWidth / 2 - 4, midY - 7, textWidth + 8, 14);
+        ctx.strokeStyle = "#cbd5e1";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(midX - textWidth / 2 - 4, midY - 7, textWidth + 8, 14);
+        ctx.fillStyle = "#1e293b";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(labelText, midX, midY);
+      }
+    }
+
+    const colorMap: Record<string, string> = {
+      LAW: "#4f46e5",
+      PROVISION: "#818cf8",
+      CASE: "#1e293b",
+      COURT: "#0f172a",
+      AUTHORITY: "#0d9488",
+      PARTY: "#0ea5e9",
+      PERSON: "#38bdf8",
+      LOCATION: "#10b981",
+      LEGAL_CONCEPT: "#f59e0b",
+      DATE: "#fb7185",
+    };
+
+    for (const n of nodes) {
+      const pos = nodePosMap.get(n.id);
+      if (!pos) continue;
+      const x = pos.x;
+      const y = pos.y;
+      const data = n.data as {
+        label?: string;
+        entityType?: string;
+        confidence?: number;
+      };
+      const entityType = data.entityType || "UNKNOWN";
+      const color = colorMap[entityType] || "#64748b";
+
+      ctx.fillStyle = "#ffffff";
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      if ("roundRect" in ctx && typeof ctx.roundRect === "function") {
+        ctx.roundRect(x, y, nodeWidth, nodeHeight, 8);
+      } else {
+        ctx.rect(x, y, nodeWidth, nodeHeight);
+      }
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(x + 12, y + 14, 4, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.font = "bold 9px sans-serif";
+      ctx.fillStyle = "#64748b";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      ctx.fillText(entityType, x + 22, y + 14);
+
+      if (typeof data.confidence === "number") {
+        ctx.textAlign = "right";
+        ctx.fillStyle = "#94a3b8";
+        ctx.fillText(`${Math.round(data.confidence * 100)}%`, x + nodeWidth - 10, y + 14);
+      }
+
+      ctx.font = "bold 11px sans-serif";
+      ctx.fillStyle = "#0f172a";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "top";
+      const title = data.label || n.id;
+      const maxChars = 24;
+      const displayTitle = title.length > maxChars ? title.slice(0, maxChars - 1) + "…" : title;
+      ctx.fillText(displayTitle, x + 10, y + 26);
+    }
+
+    const dataUrl = canvas.toDataURL("image/png");
+    const link = document.createElement("a");
+    link.download = filename;
+    link.href = dataUrl;
+    link.click();
+    return true;
+  } catch (err) {
+    console.error("Canvas export failed", err);
+    return false;
+  }
+}
+
 export function RelationshipGraph({
   graph,
   sources,
@@ -135,7 +317,7 @@ export function RelationshipGraph({
           selected: selectedNode?.id === n.id || focusNodeId === n.id,
         } satisfies Node;
       });
-  }, [graph.nodes, visible, connectedIds, searchMatch, selectedNode, focusNodeId]);
+  }, [graph.nodes, visible, connectedIds, searchMatch, selectedNode, focusNodeId, showDisconnected]);
 
   const flowEdges: Edge[] = useMemo(() => {
     const visibleIds = new Set(flowNodes.map((n) => n.id));
@@ -199,24 +381,22 @@ export function RelationshipGraph({
   }, [graph, sessionId]);
 
   const exportImage = useCallback(() => {
-    if (!isBrowser()) return;
-    const el = document.querySelector(".react-flow__renderer") as
-      | HTMLCanvasElement
-      | null;
-    // React Flow renders to canvas — best-effort export
-    const canvas = document.querySelector("canvas") as HTMLCanvasElement | null;
-    const target = el ?? canvas;
-    if (!target) return;
-    try {
-      const url = (target as HTMLCanvasElement).toDataURL("image/png");
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `legal-buddy-graph-${sessionId ?? "export"}.png`;
-      a.click();
-    } catch {
+    if (!isBrowser() || !flowNodes.length) return;
+    const ok = exportGraphAsPng(
+      flowNodes,
+      flowEdges,
+      `legal-buddy-graph-${sessionId ?? "export"}.png`
+    );
+    if (!ok) {
       alert("Graph image export is not supported in this browser — use JSON export.");
     }
-  }, [sessionId]);
+  }, [flowNodes, flowEdges, sessionId]);
+
+  const typeCounts = useMemo(() => {
+    const counts: Partial<Record<EntityType, number>> = {};
+    for (const n of graph.nodes) counts[n.entityType] = (counts[n.entityType] ?? 0) + 1;
+    return counts;
+  }, [graph.nodes]);
 
   if (!graph.nodes.length) {
     return (
@@ -231,12 +411,6 @@ export function RelationshipGraph({
       </div>
     );
   }
-
-  const typeCounts = useMemo(() => {
-    const counts: Partial<Record<EntityType, number>> = {};
-    for (const n of graph.nodes) counts[n.entityType] = (counts[n.entityType] ?? 0) + 1;
-    return counts;
-  }, [graph.nodes]);
 
   return (
     <section className="space-y-3" aria-label="Legal relationship graph">

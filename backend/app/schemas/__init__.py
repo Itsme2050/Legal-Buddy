@@ -239,6 +239,7 @@ class UsageRecord(BaseModel):
 # ---------------------------------------------------------------------------
 
 class ResearchRequest(BaseModel):
+    session_id: Optional[str] = None
     question: str = Field(..., min_length=8, max_length=2000)
     jurisdiction: str = Field(default="India", max_length=120)
     topic: str = Field(default="general", max_length=80)

@@ -90,9 +90,7 @@ def _client_key(request: Request) -> str:
 
 
 def enforce_rate_limit(request: Request) -> None:
-    key = _client_key(request)
-    if not rate_limiter.check(key):
-        raise StarletteHTTPExceptionLike  # pragma: no cover
+    rate_limit(request)
 
 
 # Use FastAPI's HTTPException for clarity
@@ -265,6 +263,10 @@ async def research_stream(session_id: str, db: Session = Depends(get_session)) -
             return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
         for _ in range(600):  # ~120s max
+            try:
+                db.expire_all()
+            except Exception:
+                pass
             row = repo.get(session_id)
             if row is None:
                 yield sse("error", {"message": "not found"})
@@ -308,6 +310,18 @@ async def analyze_document(
     data = await file.read()
     try:
         result = await analyze_uploaded_pdf(data, file.filename or "upload.pdf")
+        repo = SessionRepository(db)
+        repo.save_document(
+            document_id=result.document_id,
+            filename=result.filename,
+            size_bytes=result.size_bytes,
+            text_chars=result.text_chars,
+            status=result.status,
+            preview_markdown=result.preview_markdown,
+            analysis=result.analysis,
+            graph=result.graph,
+            error=result.error,
+        )
     except DocumentValidationError as exc:
         raise HTTPException(
             status_code=422,

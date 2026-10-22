@@ -132,7 +132,13 @@ function DashboardInner() {
     // Optimistically mark the prepare stage running (mirrors backend stage machine)
     setStageByKey("prepare", { status: "running" });
 
+    const clientSessionId =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : "sess_" + Math.random().toString(36).substring(2, 11);
+
     const body: ResearchRequest = {
+      session_id: clientSessionId,
       question: q,
       jurisdiction,
       topic,
@@ -141,8 +147,37 @@ function DashboardInner() {
       date_to: dateTo || null,
     };
 
+    let sse: EventSource | null = null;
+    if (typeof window !== "undefined" && typeof EventSource !== "undefined") {
+      try {
+        const apiBase =
+          process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ||
+          "http://localhost:8000";
+        sse = new EventSource(`${apiBase}/api/research/${clientSessionId}/stream`);
+        sse.addEventListener("status", (evt) => {
+          try {
+            const data = JSON.parse(evt.data);
+            if (Array.isArray(data.stages) && data.stages.length > 0) {
+              setStages(data.stages);
+            }
+          } catch {
+            /* ignore SSE parse */
+          }
+        });
+        sse.addEventListener("done", () => {
+          sse?.close();
+        });
+        sse.addEventListener("error", () => {
+          sse?.close();
+        });
+      } catch {
+        /* fallback to response */
+      }
+    }
+
     try {
       const res = await startResearch(body);
+      sse?.close();
       if (abortRef.current) return;
       const result = res.result;
       // Reconcile stages from real backend state — never invent progress
@@ -174,6 +209,7 @@ function DashboardInner() {
         setErrCode("network");
       }
     } finally {
+      sse?.close();
       setSubmitting(false);
     }
   }, [question, jurisdiction, topic, preference, dateFrom, dateTo, router, setStageByKey]);
