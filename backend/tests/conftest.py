@@ -18,12 +18,25 @@ os.environ.setdefault("ENVIRONMENT", "test")
 
 @pytest.fixture(autouse=True)
 def fresh_settings():
-    """Give every test a fresh Settings singleton (tests mutate settings)."""
+    """Give every test a fresh Settings singleton and isolated usage state."""
     from app.core.config import reset_settings
+    from app.main import rate_limiter
+    from app.models.entities import UsageRow
+    from app.repositories.database import SessionLocal, init_db
+    from sqlalchemy import delete
 
     reset_settings()
+    init_db()
+    with SessionLocal() as s:
+        try:
+            s.execute(delete(UsageRow))
+            s.commit()
+        except Exception:
+            pass
+    rate_limiter._hits.clear()
     yield
     reset_settings()
+    rate_limiter._hits.clear()
 
 
 @pytest.fixture()

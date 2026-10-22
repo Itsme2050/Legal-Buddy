@@ -78,17 +78,19 @@ def test_document_analysis_persists_to_database(client, db_session):
 @pytest.mark.asyncio
 async def test_research_request_supports_custom_session_id(db_session, monkeypatch):
     """Workflow supports client-supplied session_id for immediate streaming."""
+    import uuid
     from app.services.research_workflow import ResearchWorkflow
 
+    custom_id = f"custom-session-{uuid.uuid4()}"
     monkeypatch.setattr(get_settings(), "tinyfish_api_key", None)
     wf = ResearchWorkflow(db_session)
     req = ResearchRequest(
-        session_id="custom-session-id-12345",
+        session_id=custom_id,
         question="What protections apply when a tenant faces eviction in India?",
     )
     res_id = await wf.run(req)
-    assert res_id == "custom-session-id-12345"
+    assert res_id == custom_id
     repo = SessionRepository(db_session)
-    row = repo.get("custom-session-id-12345")
+    row = repo.get(custom_id)
     assert row is not None
-    assert row.id == "custom-session-id-12345"
+    assert row.id == custom_id
